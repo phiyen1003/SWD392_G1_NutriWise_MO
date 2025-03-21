@@ -4,11 +4,16 @@ import { StyleSheet, Text, View, Button, Alert } from "react-native";
 import * as Notifications from "expo-notifications";
 import * as Clipboard from "expo-clipboard";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import { createStackNavigator } from "@react-navigation/stack";
 import { NavigationContainer } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 
-// Màn hình Home (Hiển thị Expo Push Token)
-const HomeScreen = () => {
+import LoginScreen from './src/screens/LoginScreen';
+import MenuScreen from './src/screens/MenuScreen';
+import ChatScreen from './src/screens/ChatScreen';
+import RecipeDetailScreen from "./src/screens/RecipeDetailScreen";
+
+const HomeScreen = ({ navigation }) => {
   const [expoPushToken, setExpoPushToken] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
 
@@ -16,20 +21,14 @@ const HomeScreen = () => {
     async function registerForPushNotifications() {
       try {
         const { status } = await Notifications.getPermissionsAsync();
-        console.log("🔍 Quyền thông báo:", status);
-        
         if (status !== "granted") {
           const { status: newStatus } = await Notifications.requestPermissionsAsync();
-          console.log("🔄 Yêu cầu quyền mới:", newStatus);
           if (newStatus !== "granted") {
             setErrorMsg("Không có quyền nhận thông báo!");
             return;
           }
         }
-
         const tokenData = await Notifications.getExpoPushTokenAsync();
-        console.log("✅ Expo Push Token:", tokenData);
-
         if (tokenData.data) {
           setExpoPushToken(tokenData.data);
         } else {
@@ -65,22 +64,32 @@ const HomeScreen = () => {
   );
 };
 
-// Màn hình Profile
 const ProfileScreen = () => (
   <View style={styles.container}>
     <Text style={styles.text}>Hồ sơ cá nhân</Text>
   </View>
 );
 
-// Màn hình Settings
-const SettingsScreen = () => (
-  <View style={styles.container}>
-    <Text style={styles.text}>Cài đặt</Text>
-  </View>
-);
-
-// Khai báo Tab Navigator
 const Tab = createBottomTabNavigator();
+const Stack = createStackNavigator();
+
+// ✅ Thêm RecipeDetailScreen vào MenuStack
+const MenuStack = () => {
+  return (
+    <Stack.Navigator>
+      <Stack.Screen 
+        name="Menu" 
+        component={MenuScreen} 
+        options={{ headerShown: false }} // Ẩn header của MenuStack
+      />
+      <Stack.Screen 
+        name="RecipeDetail" 
+        component={RecipeDetailScreen}
+        options={{ title: "Recipe Detail" }}
+      />
+    </Stack.Navigator>
+  );
+};
 
 export default function App() {
   return (
@@ -89,13 +98,11 @@ export default function App() {
         screenOptions={({ route }) => ({
           tabBarIcon: ({ color, size }) => {
             let iconName;
-            if (route.name === "Home") {
-              iconName = "home";
-            } else if (route.name === "Profile") {
-              iconName = "person";
-            } else if (route.name === "Settings") {
-              iconName = "settings";
-            }
+            if (route.name === "Home") iconName = "home";
+            if (route.name === "Menu") iconName = "fast-food-outline";
+            if (route.name === "Profile") iconName = "person";
+            if (route.name === "Chat") iconName = "chatbubbles";
+            if (route.name === "Login") iconName = "log-in";
             return <Ionicons name={iconName} size={size} color={color} />;
           },
           tabBarActiveTintColor: "#007AFF",
@@ -103,12 +110,16 @@ export default function App() {
         })}
       >
         <Tab.Screen name="Home" component={HomeScreen} />
+        <Tab.Screen name="Menu" component={MenuStack} />
         <Tab.Screen name="Profile" component={ProfileScreen} />
-        <Tab.Screen name="Settings" component={SettingsScreen} />
+        <Tab.Screen name="Chat" component={ChatScreen} />
+        <Tab.Screen name="Login" component={LoginScreen} />
       </Tab.Navigator>
     </NavigationContainer>
   );
 }
+
+
 
 const styles = StyleSheet.create({
   container: {
