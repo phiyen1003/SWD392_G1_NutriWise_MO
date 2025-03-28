@@ -3,9 +3,9 @@
     "reactNativeVersion": {
       "newArchEnabled": true
     },
-    "name": "NutriWise",
+    "name": "nutriWise",
     "slug": "nutriwise",
-    "scheme": "nutriwise",
+    "scheme": "com.googleusercontent.apps.1012104829453-arv7qiitueu2u2jekub0vphbig69gdbq",
     "version": "1.0.0",
     "platforms": ["ios", "android", "web"], 
     "orientation": "portrait",
@@ -26,8 +26,8 @@
     },
     "assetBundlePatterns": ["**/*"],
     "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.myexpoapp"
+      "bundleIdentifier": "com.nutriwise.app",
+      "googleServicesFile": "./GoogleService-Info.plist"
     },
     "android": {
       "adaptiveIcon": {

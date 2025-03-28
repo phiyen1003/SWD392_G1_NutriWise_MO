@@ -5,6 +5,7 @@ import axios from 'axios';
 import { REACT_APP_OPENAI_API_KEY } from '@env';
 import { KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback } from 'react-native';
 import { ActivityIndicator } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const ChatScreen = () => {
   const [messages, setMessages] = useState([]);
@@ -14,8 +15,8 @@ const ChatScreen = () => {
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [pageNumber, setPageNumber] = useState(1);
-  const flatListRef = useRef(null); // ✅ Tạo ref cho FlatList
-  const userId = 1;
+  const [userId, setUserId] = useState(null); // ✅ Lấy userId từ AsyncStorage
+  const flatListRef = useRef(null);
 
   const axiosInstance = axios.create({
     baseURL: 'https://swd392nutriwisewebapp-acgge4e8a2cubkh8.centralus-01.azurewebsites.net/api/Chat',
@@ -26,48 +27,62 @@ const ChatScreen = () => {
     timeout: 30000,
   });
 
+  // 🟢 Lấy userId từ AsyncStorage
   useEffect(() => {
-    fetchUserSessions();
+    const loadUserId = async () => {
+      try {
+        const storedUserId = await AsyncStorage.getItem('userId');
+        if (storedUserId) {
+          setUserId(parseInt(storedUserId)); // ✅ Chuyển về kiểu số
+        }
+      } catch (error) {
+        console.error('Failed to load userId:', error);
+      }
+    };
+
+    loadUserId();
   }, []);
 
-  // 🟢 Lấy danh sách session của user
-const fetchUserSessions = async () => {
-  if (loading || !hasMore) return;
-  
-  try {
-    setLoading(true);
-    const response = await axiosInstance.get(`/user/${userId}`, {
-      params: {
-        pageNumber: pageNumber,
-      },
-    });
-
-    console.log('Response data:', response.data);
-
-    if (response.data.length > 0) {
-      setSessions((prev) => [...prev, ...response.data]); // Nối vào danh sách cũ
-      setPageNumber((prev) => prev + 1); // Tăng số trang lên để load tiếp
-    } else {
-      setHasMore(false); // Hết dữ liệu thì ngừng cuộn
+  useEffect(() => {
+    if (userId) {
+      fetchUserSessions();
     }
-  } catch (error) {
-    console.error('Failed to load sessions:', error.message);
-  } finally {
-    setLoading(false);
-  }
-};
+  }, [userId]);
 
-// 🟢 Xử lý khi cuộn đến cuối danh sách
-const handleLoadMore = () => {
-  if (hasMore) {
-    fetchUserSessions();
-  }
-};
-  
+  // 🟢 Lấy danh sách session của user
+  const fetchUserSessions = async () => {
+    if (loading || !hasMore || !userId) return;
+
+    try {
+      setLoading(true);
+      const response = await axiosInstance.get(`/user/${userId}`, {
+        params: { pageNumber },
+      });
+
+      if (response.data.length > 0) {
+        setSessions((prev) => [...prev, ...response.data]);
+        setPageNumber((prev) => prev + 1);
+      } else {
+        setHasMore(false);
+      }
+    } catch (error) {
+      console.error('Failed to load sessions:', error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 🟢 Load thêm khi cuộn đến cuối
+  const handleLoadMore = () => {
+    if (hasMore) {
+      fetchUserSessions();
+    }
+  };
 
   // 🟢 Lấy tin nhắn từ session
   const fetchMessages = async (sessionId) => {
     if (!sessionId) return;
+
     try {
       setLoading(true);
       const response = await axiosInstance.get(`/messages/${sessionId}`);
@@ -77,13 +92,9 @@ const handleLoadMore = () => {
           isUser: msg.isUserMessage,
         }));
         setMessages(formattedMessages);
-
-        // ✅ Đợi state cập nhật xong rồi cuộn xuống dưới cùng
         setTimeout(() => {
           flatListRef.current?.scrollToEnd({ animated: true });
         }, 100);
-      } else {
-        setMessages([]);
       }
     } catch (error) {
       console.error('Failed to load messages:', error.message);
@@ -94,110 +105,100 @@ const handleLoadMore = () => {
 
   // 🟢 Tạo session mới
   const createSession = async () => {
+    if (!userId) return;
+
     try {
       const response = await axiosInstance.post('/session', {
         userId,
-        title: `New Session ${Math.max(...sessions.map(s => s.sessionId), 0) + 1}`, // ✅ Lấy ID cao nhất rồi +1
+        title: `New Session ${Math.max(...sessions.map(s => s.chatSessionId || 0), 0) + 1}`,
       });
-  
-      console.log('Create session response:', response.data);
-  
-      if (response.data && response.data.chatSessionId) {
+
+      if (response.data?.chatSessionId) {
         const newSession = {
-          sessionId: response.data.chatSessionId,
-          title: response.data.title || `New Session ${Math.max(...sessions.map(s => s.sessionId), 0) + 1}`, 
+          chatSessionId: response.data.chatSessionId,
+          title: response.data.title || `New Session ${response.data.chatSessionId}`,
           createdDate: response.data.createdDate || new Date().toISOString(),
           lastUpdatedDate: response.data.lastUpdatedDate || new Date().toISOString(),
           messages: response.data.messages || [],
         };
-  
-        setSessions((prev) => [newSession, ...prev]); 
-        await fetchUserSessions();
-      } else {
-        console.error('Invalid response data:', response.data);
+
+        setSessions((prev) => [newSession, ...prev]);
+        setSelectedSessionId(response.data.chatSessionId);
       }
     } catch (error) {
       console.error('Failed to create session:', error.message);
       Alert.alert('Error', 'Failed to create session. Please try again.');
     }
   };
-  
-
-
 
   // 🟢 Gửi tin nhắn
-const handleSendMessage = async () => {
-  if (!newMessage.trim()) return;
+  const handleSendMessage = async () => {
+    if (!newMessage.trim() || !userId) return;
 
-  try {
-    let sessionId = selectedSessionId;
-    if (!sessionId) {
-      // Tạo session mới nếu chưa có
-      const sessionResponse = await axiosInstance.post('/session', {
-        userId,
-        title: `New Session ${sessions.length + 1}`,
+    try {
+      let sessionId = selectedSessionId;
+      if (!sessionId) {
+        const sessionResponse = await axiosInstance.post('/session', {
+          userId,
+          title: `New Session ${sessions.length + 1}`,
+        });
+        sessionId = sessionResponse.data.chatSessionId;
+        setSelectedSessionId(sessionId);
+        setSessions((prev) => [...prev, sessionResponse.data]);
+      }
+
+      const messageResponse = await axiosInstance.post('/message', {
+        chatSessionId: sessionId,
+        content: newMessage.trim(),
       });
-      sessionId = sessionResponse.data.id;
-      setSelectedSessionId(sessionId);
-      setSessions((prev) => [...prev, sessionResponse.data]);
-    }
 
-    // Gửi tin nhắn của người dùng
-    const messageResponse = await axiosInstance.post('/message', {
-      chatSessionId: sessionId,
-      content: newMessage.trim(),
-    });
+      if (messageResponse.data) {
+        const { userMessage, aiResponse } = messageResponse.data;
 
-    if (messageResponse.data) {
-      const { userMessage, aiResponse } = messageResponse.data;
-
-      // ✅ Thêm tin nhắn của người dùng vào state
-      setMessages((prev) => [
-        ...prev,
-        {
-          messageId: userMessage.chatMessageId,
-          sessionId: userMessage.chatSessionId,
-          sentTime: userMessage.timestamp,
-          content: userMessage.content,
-          isUser: true,
-        },
-      ]);
-
-      // ✅ Thêm phản hồi từ AI vào state
-      if (aiResponse) {
         setMessages((prev) => [
           ...prev,
           {
-            messageId: aiResponse.chatMessageId,
-            sessionId: aiResponse.chatSessionId,
-            sentTime: aiResponse.timestamp,
-            content: aiResponse.content,
-            isUser: false,
+            messageId: userMessage.chatMessageId,
+            sessionId: userMessage.chatSessionId,
+            sentTime: userMessage.timestamp,
+            content: userMessage.content,
+            isUser: true,
           },
         ]);
-      }
 
-      setNewMessage('');
+        if (aiResponse) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              messageId: aiResponse.chatMessageId,
+              sessionId: aiResponse.chatSessionId,
+              sentTime: aiResponse.timestamp,
+              content: aiResponse.content,
+              isUser: false,
+            },
+          ]);
+        }
+        setNewMessage('');
+      }
+    } catch (error) {
+      console.error('Failed to send message:', error.message);
     }
-  } catch (error) {
-    console.error('Failed to send message:', error.message);
-  }
-};
+  };
 
   // 🟢 Xoá session
-const deleteSession = async (sessionId) => {
-  try {
-    await axiosInstance.delete(`/session/${sessionId}`);
-    setSessions((prev) => prev.filter((s) => s.chatSessionId !== sessionId));
-    setMessages([]);
-    setSelectedSessionId(null);
-    Alert.alert('Deleted', 'Session deleted successfully');
-    await fetchUserSessions(); // 🔄 Load lại danh sách session
-  } catch (error) {
-    console.error('Failed to delete session:', error.message);
-    Alert.alert('Error', 'Failed to delete session');
-  }
-};
+  const deleteSession = async (sessionId) => {
+    try {
+      await axiosInstance.delete(`/session/${sessionId}`);
+      setSessions((prev) => prev.filter((s) => s.chatSessionId !== sessionId));
+      setMessages([]);
+      setSelectedSessionId(null);
+      Alert.alert('Deleted', 'Session deleted successfully');
+      fetchUserSessions();
+    } catch (error) {
+      console.error('Failed to delete session:', error.message);
+      Alert.alert('Error', 'Failed to delete session');
+    }
+  };
 
 const handleConfirmDelete = (sessionId) => {
   Alert.alert(
@@ -228,23 +229,23 @@ return (
       <View style={styles.container}>
         {/* 🔹 Nút Back */}
         {selectedSessionId && (
-            <TouchableOpacity style={styles.backButton} onPress={() => setSelectedSessionId(null)}>
-              <Ionicons name="arrow-back" size={24} color="#000" />
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity style={styles.backButton} onPress={() => setSelectedSessionId(null)}>
+            <Ionicons name="arrow-back" size={24} color="#000" />
+          </TouchableOpacity>
+        )}
 
         {/* 🔹 Nút Tạo Session Mới */}
         {!selectedSessionId && (
-            <TouchableOpacity style={styles.newSessionButton} onPress={createSession}>
-              <Text style={styles.newSessionButtonText}>+ New Session</Text>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity style={styles.newSessionButton} onPress={createSession}>
+            <Text style={styles.newSessionButtonText}>+ New Session</Text>
+          </TouchableOpacity>
+        )}
 
         {/* 🔹 Danh sách session */}
         {!selectedSessionId && (
           <FlatList
             data={sessions || []}
-            keyExtractor={(item) => item?.chatSessionId?.toString()}
+            keyExtractor={(item) => item?.chatSessionId?.toString() || `${Math.random()}`} // ✅ Fix lỗi key
             renderItem={({ item }) => (
               <View style={styles.sessionItem}>
                 <TouchableOpacity
@@ -262,28 +263,27 @@ return (
                   </Text>
                 </TouchableOpacity>
                 {/* 🗑️ Nút xoá */}
-        <TouchableOpacity
-          style={styles.deleteButton}
-          onPress={() => handleConfirmDelete(item.chatSessionId)}
-        >
-          <Text style={styles.deleteText}>🗑️</Text>
-        </TouchableOpacity>
-      </View>
-    )}
-    ListEmptyComponent={<Text>No sessions available</Text>}
-  // ✅ Xử lý khi cuộn đến cuối danh sách
-  onEndReached={handleLoadMore}
-  onEndReachedThreshold={0.1} // Khi cuộn đến 10% cuối thì gọi API tiếp
-  ListFooterComponent={
-    loading ? <ActivityIndicator size="large" color="#0000ff" /> : null
-  }
-/>
-)}
+                <TouchableOpacity
+                  style={styles.deleteButton}
+                  onPress={() => handleConfirmDelete(item.chatSessionId)}
+                >
+                  <Text style={styles.deleteText}>🗑️</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            ListEmptyComponent={<Text>No sessions available</Text>}
+            onEndReached={handleLoadMore}
+            onEndReachedThreshold={0.1}
+            ListFooterComponent={
+              loading ? <ActivityIndicator size="large" color="#0000ff" /> : null
+            }
+          />
+        )}
 
         {/* 🔹 Khung chat */}
         {selectedSessionId && (
           <FlatList
-            ref={flatListRef} // ✅ Tham chiếu để cuộn xuống dưới cùng
+            ref={flatListRef}
             data={messages}
             keyExtractor={(_, index) => index.toString()}
             renderItem={({ item }) => (
@@ -293,16 +293,14 @@ return (
                   item.isUser ? styles.userMessage : styles.aiMessage,
                 ]}
               >
-                <Text
-                  style={item.isUser ? styles.userText : styles.aiText}
-                >
+                <Text style={item.isUser ? styles.userText : styles.aiText}>
                   {item.content}
                 </Text>
               </View>
             )}
             onContentSizeChange={() =>
               flatListRef.current?.scrollToEnd({ animated: true })
-            } // ✅ Cuộn khi có tin nhắn mới
+            }
           />
         )}
 

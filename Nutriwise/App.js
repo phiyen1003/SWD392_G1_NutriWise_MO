@@ -12,6 +12,8 @@ import LoginScreen from './src/screens/LoginScreen';
 import MenuScreen from './src/screens/MenuScreen';
 import ChatScreen from './src/screens/ChatScreen';
 import RecipeDetailScreen from "./src/screens/RecipeDetailScreen";
+import RegisterScreen from './src/screens/RegisterScreen';
+
 
 const HomeScreen = ({ navigation }) => {
   const [expoPushToken, setExpoPushToken] = useState(null);
@@ -91,6 +93,23 @@ const MenuStack = () => {
   );
 };
 
+// ✅ Tạo AuthStack cho Login và Register
+const AuthStack = () => (
+  <Stack.Navigator>
+    <Stack.Screen 
+      name="LoginScreen" 
+      component={LoginScreen} 
+      options={{ headerShown: false }} 
+    />
+    <Stack.Screen 
+      name="RegisterScreen" 
+      component={RegisterScreen}
+      options={{ title: "Register" }}
+    />
+  </Stack.Navigator>
+);
+
+
 export default function App() {
   return (
     <NavigationContainer>
@@ -102,7 +121,7 @@ export default function App() {
             if (route.name === "Menu") iconName = "fast-food-outline";
             if (route.name === "Profile") iconName = "person";
             if (route.name === "Chat") iconName = "chatbubbles";
-            if (route.name === "Login") iconName = "log-in";
+            if (route.name === "Auth") iconName = "log-in";
             return <Ionicons name={iconName} size={size} color={color} />;
           },
           tabBarActiveTintColor: "#007AFF",
@@ -113,7 +132,16 @@ export default function App() {
         <Tab.Screen name="Menu" component={MenuStack} />
         <Tab.Screen name="Profile" component={ProfileScreen} />
         <Tab.Screen name="Chat" component={ChatScreen} />
-        <Tab.Screen name="Login" component={LoginScreen} />
+        <Tab.Screen 
+  name="Login" 
+  component={AuthStack}
+  options={{
+    tabBarIcon: ({ color, size }) => (
+      <Ionicons name="log-in" size={size} color={color} />
+    )
+  }}
+/>
+
       </Tab.Navigator>
     </NavigationContainer>
   );
